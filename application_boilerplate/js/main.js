@@ -15,17 +15,28 @@
  | See the License for the specific language governing permissions and
  | limitations under the License.
  */
-define(["dojo/_base/declare", "dojo/_base/lang", "esri/arcgis/utils", "dojo/dom", "dojo/dom-class", "dojo/on", "dojo/domReady!"], function (
-  declare,
-  lang,
-  arcgisUtils,
-  dom,
-  domClass,
-  on
+define([
+  "dojo/_base/declare",
+  "dojo/_base/lang",
+
+  "dojo/Deferred",
+
+  "dojo/dom",
+  "dojo/dom-class",
+
+  "esri/arcgis/utils",
+
+  "dojo/domReady!"
+], function (
+  declare, lang,
+  Deferred,
+  dom, domClass,
+  arcgisUtils
 ) {
   return declare(null, {
     config: {},
     startup: function (config) {
+      var promise;
       // config will contain application and user defined info for the template such as i18n strings, the web map id
       // and application id
       // any url parameters and any application specific configuration information.
@@ -33,11 +44,15 @@ define(["dojo/_base/declare", "dojo/_base/lang", "esri/arcgis/utils", "dojo/dom"
         this.config = config;
         //supply either the webmap id or, if available, the item info
         var itemInfo = this.config.itemInfo || this.config.webmap;
-        this._createWebMap(itemInfo);
+        promise = this._createWebMap(itemInfo);
       } else {
         var error = new Error("Main:: Config is not defined");
         this.reportError(error);
+        var def = new Deferred();
+        def.reject(error);
+        promise = def.promise;
       }
+      return promise;
     },
     reportError: function (error) {
       // remove loading class from body
@@ -56,21 +71,25 @@ define(["dojo/_base/declare", "dojo/_base/lang", "esri/arcgis/utils", "dojo/dom"
           node.innerHTML = "Unable to create map: " + error.message;
         }
       }
+      return error;
     },
-    // Sample function
-    _helloWorld: function () {
-      console.log("Hello World!");
-      console.log("My Map:", this.map);
-      console.log("My Config:", this.config);
-    },
+
     // create a map based on the input web map id
     _createWebMap: function (itemInfo) {
-      arcgisUtils.createMap(itemInfo, "mapDiv", {
-        mapOptions: {
-          // Optionally define additional map config here for example you can
-          // turn the slider off, display info windows, disable wraparound 180, slider position and more.
-        },
+      // set extent from config/url
+      itemInfo = this._setExtent(itemInfo);
+      // Optionally define additional map config here for example you can
+      // turn the slider off, display info windows, disable wraparound 180, slider position and more.
+      var mapOptions = {};
+      // set zoom level from config/url
+      mapOptions = this._setLevel(mapOptions);
+      // set map center from config/url
+      mapOptions = this._setCenter(mapOptions);
+      // create webmap from item
+      return arcgisUtils.createMap(itemInfo, "mapDiv", {
+        mapOptions: mapOptions,
         usePopupManager: true,
+        layerMixins: this.config.layerMixins || [],
         editable: this.config.editable,
         bingMapsKey: this.config.bingKey
       }).then(lang.hitch(this, function (response) {
@@ -82,11 +101,55 @@ define(["dojo/_base/declare", "dojo/_base/lang", "esri/arcgis/utils", "dojo/dom"
         this.map = response.map;
         // remove loading class from body
         domClass.remove(document.body, "app-loading");
-        // Start writing my code
-        this._helloWorld();
+        // Start writing code
+        /* ---------------------------------------- */
+        /*  Map is ready. Start writing code        */
+        /* ---------------------------------------- */
+        console.log("Hello World!");
+        console.log("My Map:", this.map);
+        console.log("My Config:", this.config);
+        /* ---------------------------------------- */
+        /*                                          */
+        /* ---------------------------------------- */
+        // return for promise
+        return response;
         // map has been created. You can start using it.
         // If you need map to be loaded, listen for it's load event.
       }), this.reportError);
+    },
+
+    _setLevel: function (options) {
+      var level = this.config.level;
+      //specify center and zoom if provided as url params 
+      if (level) {
+        options.zoom = level;
+      }
+      return options;
+    },
+
+    _setCenter: function (options) {
+      var center = this.config.center;
+      if (center) {
+        var points = center.split(",");
+        if (points && points.length === 2) {
+          options.center = [parseFloat(points[0]), parseFloat(points[1])];
+        }
+      }
+      return options;
+    },
+
+    _setExtent: function (info) {
+      var e = this.config.extent;
+      //If a custom extent is set as a url parameter handle that before creating the map
+      if (e) {
+        var extArray = e.split(",");
+        var extLength = extArray.length;
+        if (extLength === 4) {
+          info.item.extent = [[parseFloat(extArray[0]), parseFloat(extArray[1])], [parseFloat(extArray[2]), parseFloat(extArray[3])]];
+        }
+      }
+      return info;
     }
+
   });
 });
